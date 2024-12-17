@@ -3,7 +3,7 @@ import pywt
 from tqdm.auto import tqdm
 
 
-class CWT_Preprocessor:
+class CWT_Processor:
     def __init__(
             self, dataset: np.lib.npyio.NpzFile, band: np.ndarray, wavelet: str = 'cmor1.5-1.0',
     ) -> None:
@@ -38,12 +38,12 @@ if __name__ == '__main__':
     raw_path = 'path_to_your_dataset.npz' # TODO: Replace with the full path to your .npz dataset file
     dataset = np.load(raw_path, allow_pickle=True)
 
-    cwt_preprocessor = CWT_Preprocessor(
+    cwt_processor = CWT_Processor(
         dataset=dataset,
         band=np.linspace(0.01, 0.1, 5),
         wavelet='cmor1.5-1.0'
     )
   
-    cwt_results = cwt_preprocessor.get_CWT_dataset()
+    cwt_results = cwt_processor.get_CWT_dataset()
 
     print("CWT processing complete. Result shape:", cwt_results.shape)
