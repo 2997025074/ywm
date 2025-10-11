@@ -11,11 +11,12 @@ class ABIDE_Dataset(Dataset):
         x_real = torch.FloatTensor(x_data.real)
         x_imag = torch.FloatTensor(x_data.imag)
         self.x_data = torch.stack([x_real, x_imag], dim=-1)
-        self.y_data = F.one_hot(torch.FloatTensor(y_data).to(torch.int64))
+        # 关键修改：直接使用原始整数标签，类型为long
+        self.y_data = torch.tensor(y_data, dtype=torch.long)  # 形状为[样本数]，如[0,1,0,...]
         self.len = self.y_data.shape[0]
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self.x_data[index], self.y_data[index]
+        return self.x_data[index], self.y_data[index]  # 返回1D标签
 
     def __len__(self) -> int:
         return self.len
@@ -71,15 +72,17 @@ def init_dataloader(
 
 def continuous_mixup_data(
         *xs: torch.Tensor,
-        y: torch.Tensor,
+        y: torch.Tensor,  # 此时y是1D整数标签（torch.long）
         alpha: float = 1.0,
         device: str = 'cuda'
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Applies mixup augmentation to the inputs and targets."""
     lam = np.random.beta(alpha, alpha) if alpha > 0 else 1.0
     batch_size = y.size(0)
     index = torch.randperm(batch_size).to(device)
 
+    # 混合输入特征
     new_xs = [lam * x + (1 - lam) * x[index, :] for x in xs]
-    y = lam * y + (1-lam) * y[index]
-    return *new_xs, y
+    # 混合标签（对1D整数标签，按比例生成浮点型混合标签）
+    y_mixed = lam * y.float() + (1 - lam) * y[index].float()
+
+    return *new_xs, y_mixed
