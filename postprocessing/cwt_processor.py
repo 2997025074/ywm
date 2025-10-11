@@ -40,7 +40,7 @@ class CWT_Processor:
 
 if __name__ == '__main__':
     # 1. 配置参数（与ABIDE.yaml中的划分比例一致）
-    raw_path = '../abide_aal_combined.npz'  # 原始npz文件路径
+    raw_path = '../abide_cc200_combined.npz'  # 原始npz文件路径
     save_dir = '../BWN/data/'  # 保存pkl文件的目录
     test_size = 0.1  # 测试集比例（对应yaml中的test_set: 0.1）
     random_state = 42  # 随机种子，确保划分结果可复现
