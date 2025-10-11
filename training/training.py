@@ -36,55 +36,76 @@ class Train:
         self.path = cfg.path
         self.save_path = os.path.join(self.path, f'Fold_{self.fold + 1}')
         os.makedirs(self.save_path, exist_ok=True)
+        self.device = torch.device(
+            "cuda" if torch.cuda.is_available() and cfg.training.use_cuda else "cpu"
+        )
 
     def train_per_epoch(self, optimizer, criterion, lr_scheduler):
         total_train, train_loss = 0., 0.
-        train_pred, train_true = [], []
+        train_pred, train_true = [], []  # train_pred存储logits（浮点型），train_true存储真实标签（整数）
 
         self.model.train()
         for batch_x, batch_y in tqdm(self.train_dataloader, leave=True):
             total_train += 1
             self.current_step += 1
             lr_scheduler.update(optimizer=optimizer, step=self.current_step)
-            batch_x, batch_y = batch_x.to(device), batch_y.to(device)
+            # 核心修正：使用self.device（类属性），而非全局device
+            batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
 
             if self.cfg.training.mixup_data:
                 batch_x, batch_y = continuous_mixup_data(batch_x, y=batch_y)
 
+            # 前向传播：outputs是logits（浮点型，[batch_size, num_classes]）
             outputs = self.model(batch_x)
-            loss = criterion(outputs, batch_y.float())
+            loss = criterion(outputs, batch_y)
+
+            # 反向传播
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
             train_loss += loss.item()
-            train_pred.append(outputs.detach().cpu())
-            train_true.append(batch_y.detach().cpu())
+
+            # 收集预测logits和真实标签（逻辑保持正确）
+            train_pred.append(outputs.detach().cpu())  # 保留logits用于后续计算
+            train_true.extend(batch_y.detach().cpu().numpy().tolist())  # 真实标签为标量列表
 
             if self.cfg.wandb:
                 wandb.log({"LR": lr_scheduler.lr, "Iter loss": loss.item()})
 
         train_loss /= total_train
+        # 计算训练指标
         train_acc, _, _, _, _, _, _ = confusion(train_true, train_pred)
         return train_loss, train_acc
 
     def evaluate(self, dataloader, criterion):
         self.model.eval()
-        total, loss = 0., 0.
-        pred, true = [], []
+        total_loss = 0.0
+        true = []  # 真实标签（标量列表）
+        pred = []  # 预测logits（张量列表）
+        total = 0
 
-        with torch.no_grad():
+        with torch.no_grad():  # 评估阶段关闭梯度计算
             for batch_x, batch_y in dataloader:
-                total += 1
-                batch_x, batch_y = batch_x.to(device), batch_y.to(device)
+                # 统一使用self.device，与训练阶段保持一致
+                batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
                 outputs = self.model(batch_x)
-                loss += criterion(outputs, batch_y.float()).item()
-                pred.append(outputs.detach().cpu())
-                true.append(batch_y.detach().cpu())
+                loss = criterion(outputs, batch_y)
 
-        loss /= total
+                # 累加损失（按样本数加权）
+                total_loss += loss.item() * batch_x.size(0)
+                total += batch_x.size(0)
+
+                # 收集标签（与训练阶段逻辑一致）
+                true.extend(batch_y.detach().cpu().numpy().tolist())  # 真实标签标量化
+                pred.append(outputs.detach().cpu())  # 保留logits
+
+        # 计算平均损失
+        avg_loss = total_loss / total if total != 0 else 0.0
+
+        # 计算评估指标
         final_result = confusion(true, pred)
-        return loss, final_result
+        return avg_loss, final_result
 
     def test(self, dataloader, criterion):
         print('Loading best model...')
