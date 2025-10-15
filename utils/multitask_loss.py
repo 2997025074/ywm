@@ -6,7 +6,7 @@ import torch.nn.functional as F
 class MultiTaskLoss(nn.Module):
     """多任务损失函数（符合idea文件9.2节）"""
 
-    def __init__(self, alpha=0.3, beta=0.2, gamma=0.1, delta=0.1):
+    def __init__(self, alpha=0.5, beta=0.6, gamma=0.4, delta=0.2):
         super().__init__()
         self.alpha = alpha  # 频带多样性权重
         self.beta = beta  # 稀疏性正则化权重

@@ -12,14 +12,17 @@
     "num_classes": 2
   },
   "training": {
-    "batch_size": 16,
+    "batch_size": 8,
     "num_epochs": 100,
     "learning_rate": 1e-4,
     "weight_decay": 1e-4,
     "train_ratio": 0.8
   },
   "paths": {
-    "best_model": "best_brain_network_model.pth",
-    "checkpoint_dir": "checkpoints"
+    "best_model": "result/best_brain_network_model.pth",
+    "checkpoint_dir": "result/checkpoints",
+    "train_history": "result/train_history.json",
+    "test_metrics": "result/test_metrics.json",
+    "confusion_matrix": "result/confusion_matrix.png"
   }
 }

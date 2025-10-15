@@ -1,5 +1,5 @@
 import numpy as np
-from sklearn.metrics import accuracy_score, roc_auc_score, precision_score, recall_score, f1_score
+from sklearn.metrics import accuracy_score, roc_auc_score, precision_score, recall_score, f1_score, confusion_matrix
 
 
 class ClassificationMetrics:
@@ -34,20 +34,42 @@ class ClassificationMetrics:
             self.all_probabilities.extend(probs_np)
 
     def compute(self):
-        """计算所有指标并返回"""
-        metrics = {
-            'accuracy': accuracy_score(self.all_labels, self.all_predictions),
-            'precision': precision_score(self.all_labels, self.all_predictions, average='weighted'),
-            'recall': recall_score(self.all_labels, self.all_predictions, average='weighted'),
-            'f1': f1_score(self.all_labels, self.all_predictions, average='weighted')
-        }
+        """计算所有指标"""
+        if len(self.all_predictions) == 0:
+            return {}
 
-        # 计算AUC（仅二分类且提供概率时）
-        if len(self.all_probabilities) > 0 and len(np.unique(self.all_labels)) == 2:
-            # 取正类概率
-            positive_probs = [p[1] for p in self.all_probabilities]
-            metrics['auc'] = roc_auc_score(self.all_labels, positive_probs)
+        predictions = np.array(self.all_predictions)
+        labels = np.array(self.all_labels)
+        probabilities = np.array(self.all_probabilities)
+
+        metrics = {}
+
+        # 基础分类指标
+        metrics['accuracy'] = accuracy_score(labels, predictions)
+        metrics['f1_score'] = f1_score(labels, predictions, average='binary')
+        metrics['precision'] = precision_score(labels, predictions, average='binary')
+        metrics['recall'] = recall_score(labels, predictions, average='binary')
+        metrics['sensitivity'] = recall_score(labels, predictions, average='binary')  # 灵敏度即召回率
+
+        # AUC（二分类）
+        if self.num_classes == 2:
+            metrics['auc'] = roc_auc_score(labels, probabilities[:, 1])
         else:
-            metrics['auc'] = 0.0  # 多分类或无概率时AUC设为0
+            metrics['auc'] = roc_auc_score(labels, probabilities, multi_class='ovo')
+
+        # 混淆矩阵
+        cm = confusion_matrix(labels, predictions)
+        metrics['confusion_matrix'] = cm
+
+        # 各类别准确率
+        class_accuracy = []
+        for i in range(self.num_classes):
+            mask = labels == i
+            if mask.sum() > 0:
+                class_acc = (predictions[mask] == i).mean()
+                class_accuracy.append(class_acc)
+            else:
+                class_accuracy.append(0.0)
+        metrics['class_accuracy'] = class_accuracy
 
         return metrics
