@@ -1,0 +1,348 @@
+# 基于自适应频带划分与多频带图神经网络的fMRI脑疾病分类技术方案
+
+## 1. 研究背景与问题定义
+
+### 1.1 研究意义
+- 脑疾病（MDD、ASD等）诊断的临床挑战
+- fMRI信号的多频率特性与疾病特异性异常
+- 传统固定频带分析方法的局限性
+
+### 1.2 核心科学问题
+- 如何自适应学习与疾病相关的频率子带？
+- 如何建模脑区间跨频带的复杂相互作用？
+- 如何从多频带脑网络中提取 discriminative 特征？
+
+### 1.3 技术挑战
+- 频带划分的个体差异与任务适应性
+- 多尺度时频特征的有效融合
+- 脑网络拓扑结构与频率特性的联合建模
+
+## 2. 总体技术架构
+
+### 2.1 端到端学习框架
+```
+原始fMRI时间序列 → 自适应小波频带划分 → 多频带图构建 → 
+混合GNN-Transformer处理 → 多频带嵌入学习 → 分类预测
+```
+
+### 2.2 核心创新点
+1. **可学习频带划分机制**：替代固定频带划分
+2. **复数小波特征全利用**：实部、虚部、相位信息融合
+3. **多层次图网络架构**：频带内+频带间关系联合建模
+4. **混合GNN-Transformer**：局部连接与全局依赖平衡
+
+## 3. 数据预处理模块
+
+### 3.1 数据加载与格式处理
+```python
+# 输入数据格式处理
+def load_fMRI_data(subject_files):
+    """
+    处理1D格式的fMRI数据
+    输入: 每个受试者的时间序列文件
+    输出: 标准化后的张量 [batch_size, num_rois, time_points]
+    """
+```
+
+### 3.2 数据标准化
+- 时间序列z-score标准化
+- 站点效应校正（如ComBat）
+- 时间点统一化处理
+
+## 4. 自适应小波频带划分模块
+
+### 4.1 连续小波变换基础
+```python
+class ContinuousWaveletTransform:
+    """
+    执行连续小波变换
+    输入: 时间序列 [B, N, T]
+    输出: 复数CWT系数 [B, N, S, T]
+    """
+    # 关键参数
+    - 小波类型: 复Morlet小波('cmor1.5-1.0')
+    - 尺度范围: 对应0.01-0.1Hz频率范围
+    - 尺度数量: 64个离散尺度
+```
+
+### 4.2 可学习频带划分机制
+```python
+class LearnableFrequencyBands(nn.Module):
+    """
+    将S个离散尺度聚类为K个连续频带
+    核心方法: 基于注意力的软分配
+    """
+    def __init__(self, num_scales=64, num_bands=4):
+        # 可学习的频带分配权重矩阵 [S, K]
+        self.scale_to_band_weights = nn.Parameter(...)
+        
+        # 尺度特征编码器
+        self.scale_encoder = nn.Sequential(...)
+    
+    def forward(self, cwt_coefficients):
+        # 软分配: 每个尺度可同时属于多个频带
+        # 输出: 频带特征 [B, N, K, T], 分配权重 [B, N, S, K]
+```
+
+### 4.3 频带划分的可解释性
+- 可视化学习到的频带边界
+- 分析频带与已知生理频段（Slow-4/Slow-5）的对应关系
+- 个体化频带模式的统计分析
+
+## 5. 复数小波特征处理模块
+
+### 5.1 复数特征分解与利用
+```python
+class ComplexFeatureProcessing(nn.Module):
+    """
+    同时处理小波系数的实部、虚部和相位信息
+    """
+    def process_complex_features(complex_coefficients):
+        # 实部处理: 信号能量特征
+        real_features = process_real_part(complex_coefficients.real)
+        
+        # 虚部处理: 正交成分特征  
+        imag_features = process_imaginary_part(complex_coefficients.imag)
+        
+        # 相位同步性计算
+        phase_sync_features = compute_phase_synchrony(complex_coefficients)
+        
+        return torch.cat([real_features, imag_features, phase_sync_features], dim=-1)
+```
+
+### 5.2 多维度特征提取
+- **实部特征**: 信号幅度，能量分布
+- **虚部特征**: 正交成分，辅助相位计算
+- **相位特征**: 脑区间同步性信息
+- **时频统计特征**: 各频带的时间动态特性
+
+## 6. 多频带脑图构建模块
+
+### 6.1 节点定义与特征
+```python
+# 节点 = 脑区-频带对
+# 总节点数 = 脑区数(N) × 频带数(K)
+node_definitions = {
+    "节点集合": "所有脑区在所有频带上的组合",
+    "节点特征": "从小波特征提取的72维向量(32实部+32虚部+8相位同步)",
+    "特征维度": "综合考虑时频特性和连接特性"
+}
+```
+
+### 6.2 边定义与图结构
+```python
+class MultiBandGraphBuilder:
+    """
+    构建双层次图结构
+    """
+    def build_graphs(band_features, band_assignments):
+        # 频带内图: 同一频带内脑区间的功能连接
+        intra_band_adj = build_intra_band_connectivity(band_features)
+        
+        # 频带间图: 同一脑区内不同频带的相关性
+        inter_band_adj = build_inter_band_connectivity(band_assignments)
+        
+        return intra_band_adj, inter_band_adj
+```
+
+### 6.3 图构建策略
+- **功能连接计算**: Pearson相关系数 + 动态阈值
+- **连接稀疏化**: 保留强连接，过滤噪声
+- **多子图集成**: 频带内图 + 频带间图的统一表示
+
+## 7. 混合GNN-Transformer架构
+
+### 7.1 分层处理架构
+```python
+class HybridGNNTransformer(nn.Module):
+    """
+    三阶段混合架构
+    """
+    def __init__(self):
+        # 阶段1: 频带内GNN - 脑区空间关系
+        self.intra_band_gnns = nn.ModuleList([GATConv(...) for _ in range(num_bands)])
+        
+        # 阶段2: 跨频带Transformer - 频带间交互
+        self.cross_band_transformer = nn.TransformerEncoder(...)
+        
+        # 阶段3: 频带间GNN - 跨频带脑区关系
+        self.inter_band_gnn = GATConv(...)
+```
+
+### 7.2 各阶段功能设计
+1. **频带内GNN处理**
+   - 输入: 各频带的脑区特征 [B, N, D]
+   - 处理: 图注意力网络学习脑区空间关系
+   - 输出: 频带特异性脑区嵌入 [B, N, hidden_dim]
+
+2. **跨频带Transformer处理**
+   - 输入: 将脑区-频带对视为序列
+   - 处理: 自注意力机制建模频带间复杂交互
+   - 输出: 跨频带整合特征 [B, N, K, hidden_dim]
+
+3. **频带间GNN处理**
+   - 输入: 拼接的跨频带特征 [B, N, K*hidden_dim]
+   - 处理: 最终的关系建模和特征精炼
+   - 输出: 每个脑区的综合嵌入 [B, N, hidden_dim]
+
+## 8. 多频带嵌入学习模块
+
+### 8.1 嵌入学习目标
+```python
+class MultiBandEmbeddingLearning(nn.Module):
+    """
+    学习包含频带信息的 discriminative 嵌入表示
+    """
+    learning_objectives = {
+        "主要目标": "区分MDD与HC的脑网络模式",
+        "学习内容": [
+            "各频带内的异常连接模式",
+            "跨频带的功能协调性破坏", 
+            "频率特异性的网络重组",
+            "个体化的异常频率特征"
+        ]
+    }
+```
+
+### 8.2 嵌入融合策略
+- **频带特异性嵌入**: 各频带独立学习特征表示
+- **注意力加权融合**: 基于任务重要性动态加权
+- **层次化聚合**: 节点级→脑区级→全脑级的特征聚合
+
+## 9. 分类与优化模块
+
+### 9.1 分类器设计
+```python
+class Classifier(nn.Module):
+    """
+    基于学习嵌入的最终分类
+    """
+    def __init__(self):
+        self.classifier = nn.Sequential(
+            nn.Linear(128, 64),  # 输入: 图级表示
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(64, 32),
+            nn.ReLU(), 
+            nn.Linear(32, 2)     # 输出: MDD vs HC
+        )
+```
+
+### 9.2 多任务损失函数
+```python
+def compute_total_loss(predictions, labels, model_outputs):
+    # 1. 主分类损失
+    cls_loss = F.cross_entropy(predictions, labels)
+    
+    # 2. 频带多样性损失
+    div_loss = -compute_band_diversity(model_outputs['band_embeddings'])
+    
+    # 3. 稀疏性正则化
+    sparse_loss = compute_sparsity_regularization(model_outputs['intra_adj'])
+    
+    # 4. 嵌入一致性损失
+    consistency_loss = compute_embedding_consistency(model_outputs)
+    
+    total_loss = cls_loss + λ1*div_loss + λ2*sparse_loss + λ3*consistency_loss
+    return total_loss
+```
+
+## 10. 可解释性分析框架
+
+### 10.1 频带重要性分析
+- 频带注意力权重的统计显著性检验
+- 疾病特异性频带模式的识别
+- 与临床症状的相关性分析
+
+### 10.2 脑网络异常定位
+- 重要脑区节点的识别（基于GNN注意力）
+- 异常功能连接的定位分析
+- 跨频带耦合异常的定量评估
+
+### 10.3 个体化诊断解释
+- 为每个患者生成"频带异常指纹"
+- 治疗反应预测的可解释性分析
+- 疾病亚型的频带特征聚类
+
+## 11. 实验设计与评估
+
+### 11.1 数据集规划
+```python
+datasets = {
+    "主要验证集": "MDD专用数据集(如REST-meta-MDD)",
+    "泛化验证集": ["ABIDE(自闭症)", "ADNI(阿尔兹海默)"],
+    "数据要求": "样本量≥500，多中心数据"
+}
+```
+
+### 11.2 基线方法比较
+```python
+baselines = {
+    "传统方法": ["基于固定频带的功能连接+SVM", "全频带功能连接分析"],
+    "深度学习方法": [
+        "BrainNetCNN", "BrainGNN", 
+        "Ada-FCN(主要对比对象)",
+        "标准GCN/GAT"
+    ],
+    "频带分析方法": ["离散小波变换+DNN", "STFT+图网络"]
+}
+```
+
+### 11.3 评估指标体系
+```python
+metrics = {
+    "分类性能": ["Accuracy", "AUC", "F1-Score", "Sensitivity", "Specificity"],
+    "可解释性": [
+        "频带划分的生理合理性",
+        "重要脑区与文献一致性",
+        "临床相关性分析"
+    ],
+    "鲁棒性": ["跨站点泛化能力", "不同预处理流程的稳定性"]
+}
+```
+
+## 12. 技术优势与创新性
+
+### 12.1 方法论创新
+1. **频带自适应学习**: 首个端到端的可学习频带划分框架
+2. **复数特征全利用**: 充分利用小波变换的实部、虚部和相位信息
+3. **多层次图架构**: 统一建模频带内和频带间的复杂关系
+4. **混合网络设计**: GNN的局部连接优势 + Transformer的全局依赖建模
+
+### 12.2 应用价值
+1. **临床诊断**: 提供个体化的频率特异性生物标志物
+2. **机制探索**: 揭示脑疾病的频带特异性病理机制
+3. **治疗指导**: 为神经调控治疗提供频率靶点建议
+
+## 13. 实施计划与里程碑
+
+### 13.1 阶段划分
+- **阶段1 (1个月)**: 核心模块实现与调试
+- **阶段2 (1个月)**: 完整管道集成与基线比较
+- **阶段3 (1个月)**: 深入实验与可解释性分析
+- **阶段4 (1个月)**: 论文撰写与投稿准备
+
+### 13.2 风险控制
+```python
+risk_mitigation = {
+    "计算复杂度": ["模型剪枝", "分布式训练", "早停策略"],
+    "过拟合风险": ["强正则化", "交叉验证", "数据增强"],
+    "收敛稳定性": ["多初始化",  "学习率调度", "梯度裁剪"]
+}
+```
+
+## 14. 预期成果与影响
+
+### 14.1 学术贡献
+- 新的频带自适应学习范式
+- 多频带脑网络分析的理论框架
+- 开源代码和预训练模型
+
+### 14.2 临床应用
+- MDD诊断的客观生物标志物
+- 个体化治疗靶点识别
+- 疾病进展监测工具
+
+这个技术方案提供了一个完整、可行且具有创新性的研究框架，既保持了理论严谨性，又具备了实际应用价值。
+
+
