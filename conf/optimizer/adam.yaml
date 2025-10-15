@@ -1,9 +1,0 @@
-name: adam
-lr: 5e-5
-weight_decay: 1e-4
-lr_scheduler:
-  mode: cos # ['cos', 'linear']
-  base_lr: ${optimizer.lr}
-  target_lr: 5e-7
-  warm_up_from: 0.0
-  warm_up_steps: 0
