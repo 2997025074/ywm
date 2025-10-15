@@ -244,6 +244,9 @@ class HybridGNNTransformer(nn.Module):
         final_embeddings = fused_embeddings.reshape(B, self.num_rois, self.hidden_dim)
         final_embeddings = self.inter_band_norm(final_embeddings)
 
+        if self.save_attn_weights:
+            intermediate_outputs['intra_gat_attn'] = self.intra_gat_attn  # 频带内GAT注意力
+            intermediate_outputs['inter_gat_attn'] = self.inter_gat_attn  # 频带间GAT注意力
         # ========================= 整理输出 =========================
         intermediate_outputs.update({
             'intra_band_embeddings': intra_band_embeddings,

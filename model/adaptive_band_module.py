@@ -36,16 +36,18 @@ class LearnableFrequencyBands(nn.Module):
             band_features: [B, N, K, F] → 自适应频带特征
             attn_weights: [B, N, S, K] → 尺度-频带分配权重（可解释性）
         """
-        B, N, S, F = scale_features.shape
+        # 将F重命名为feat_dim，避免与torch.nn.functional的F冲突
+        B, N, S, feat_dim = scale_features.shape  # 这里修改变量名
 
         # 步骤1：编码每个尺度的特征 → [B, N, S, hidden_dim]
         encoded_scales = self.scale_encoder(scale_features)
 
         # 步骤2：计算注意力权重（软分配）→ [B, N, S, K]
         attn_weights = torch.einsum('bnsh,shk->bnsk', encoded_scales, self.scale2band_attn)
-        attn_weights = F.softmax(attn_weights, dim=2)  # 每个频带内，尺度权重和为1
+        attn_weights = F.softmax(attn_weights, dim=2)  # 现在F正确指向torch.nn.functional
 
         # 步骤3：按权重融合尺度特征，得到K个频带的特征 → [B, N, K, F]
+        # 注意这里的 einsum 中"f"对应原来的F，现在变量名改为feat_dim，但维度含义不变，无需修改einsum表达式
         band_features = torch.einsum('bnsk,bnsf->bnkf', attn_weights, scale_features)
 
         # 步骤4：应用频带重要性权重
