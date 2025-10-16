@@ -5,7 +5,8 @@ from sklearn.metrics import accuracy_score, roc_auc_score, precision_score, reca
 class ClassificationMetrics:
     """分类任务指标计算（完善多指标支持）"""
 
-    def __init__(self):
+    def __init__(self, num_classes=2):  # 新增 num_classes 参数
+        self.num_classes = num_classes  # 存储类别数
         self.all_predictions = []  # 预测类别
         self.all_labels = []  # 真实标签
         self.all_probabilities = []  # 预测概率（用于AUC）
