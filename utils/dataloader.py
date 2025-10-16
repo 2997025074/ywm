@@ -67,7 +67,7 @@ def create_data_loaders(config, shuffle=True, num_workers=0):
     label_path = config['data']['label_path']
     batch_size = config['training']['batch_size']
 
-    # 从config读取比例（默认train:0.8, val:0.1, test:0.1）
+    # 从config读取比例
     train_ratio = config['training'].get('train_ratio', 0.7)
     val_ratio = config['training'].get('val_ratio', 0.15)
     test_ratio = config['training'].get('test_ratio', 0.15)

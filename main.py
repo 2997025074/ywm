@@ -5,7 +5,6 @@ import torch
 import json
 import os
 
-from matplotlib import pyplot as plt
 
 
 def main():
@@ -49,7 +48,7 @@ def main():
             "paths": {
                 "best_model": "result/best_model.pth",
                 "checkpoint_dir": "result/checkpoints",
-                "train_history": "result/train_history.json",  # 补充train_history
+                "train_history": "result/train_history.json",
                 "test_metrics": "result/test_metrics.json",
                 "confusion_matrix": "result/confusion_matrix.png"
             }
@@ -61,11 +60,11 @@ def main():
             json.dump(config, f, indent=2)
         print(f"已创建默认配置文件: {args.config}")
 
-    # 确保result目录存在（包含train_history目录）
+    # 确保result目录存在
     result_dirs = [
         os.path.dirname(config['paths']['best_model']),
         config['paths']['checkpoint_dir'],
-        os.path.dirname(config['paths']['train_history']),  # 确保训练历史目录存在
+        os.path.dirname(config['paths']['train_history']),
         os.path.dirname(config['paths']['test_metrics'])
     ]
     for dir_path in result_dirs:
@@ -74,7 +73,7 @@ def main():
     if args.mode == 'train':
         from trainer import train_complete_model
 
-        # 合并配置（保持不变）
+        # 合并配置
         train_config = {
             'h5_path': config['data']['h5_path'],
             'label_path': config['data']['label_path'],
@@ -92,7 +91,7 @@ def main():
             'best_model_path': config['paths']['best_model'],
             'checkpoint_dir': config['paths']['checkpoint_dir'],
             'train_history': config['paths']['train_history'],
-            'save_interval': config['training'].get('save_interval', 10)
+            'save_interval': config['training']['save_interval']
         }
 
         # 检查数据文件
@@ -108,27 +107,31 @@ def main():
         from cwt_processor import ABIDEWaveletFeatureExtractor, Config
         print("开始提取小波特征...")
         cfg = Config()
-        # 修复：直接创建输出目录（而非其父目录）
-        os.makedirs(cfg.OUTPUT_DIR, exist_ok=True)
+        # 确保数据目录存在
+        os.makedirs(os.path.dirname(cfg.OUTPUT_DIR), exist_ok=True)
         extractor = ABIDEWaveletFeatureExtractor(cfg)
         extractor.run()
 
+
     elif args.mode == 'test':
+
         print("开始测试模型...")
-
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
         # 确保result文件夹存在
+
         result_dirs = [
             os.path.dirname(config['paths']['test_metrics']),
             os.path.dirname(config['paths']['confusion_matrix'])
         ]
+
         for dir_path in result_dirs:
             os.makedirs(dir_path, exist_ok=True)
 
         # 加载模型
+
         from model.classifier import BrainNetworkClassifier
         model = BrainNetworkClassifier(
+
             num_rois=config['model']['num_rois'],
             num_scales=config['model']['num_scales'],
             num_bands=config['model']['num_bands'],
@@ -138,45 +141,54 @@ def main():
         )
 
         from trainer import BrainNetworkTrainer
+
         trainer = BrainNetworkTrainer(model, device)
         # 加载检查点（默认使用最佳模型）
         checkpoint_path = args.checkpoint or config['paths']['best_model']
         if not os.path.exists(checkpoint_path):
             print(f"错误：检查点文件不存在 - {checkpoint_path}")
             return
+
         trainer.load_checkpoint(checkpoint_path)
 
-        # 修复：正确获取测试集加载器（匹配dataloader返回格式）
+        # 创建测试数据加载器
+
         from utils.dataloader import create_data_loaders
-        _, _, test_loader, _ = create_data_loaders(  # 前两个为train/val，第三个才是test
+        # 修正：接收四个返回值，提取第三个作为test_loader
+        _, _, test_loader, _ = create_data_loaders(
             config['data']['h5_path'],
             config['data']['label_path'],
             batch_size=config['training']['batch_size'],
             train_ratio=config['training']['train_ratio']
         )
 
-        # 执行测试（保持不变）
+        # 执行测试
+
         from utils.metrics import ClassificationMetrics
         metrics_calc = ClassificationMetrics(num_classes=config['model']['num_classes'])
         model.eval()
         with torch.no_grad():
+
             for features, labels in test_loader:
                 features = features.to(device)
                 labels = labels.to(device)
                 predictions, _ = model(features)
                 metrics_calc.update(predictions, labels)
 
-        # 计算并保存测试指标（保持不变）
+        # 计算并保存测试指标
+
         test_metrics = metrics_calc.compute()
         with open(config['paths']['test_metrics'], 'w') as f:
-            serializable_metrics = {
-                k: v.tolist() if isinstance(v, np.ndarray) else v
-                for k, v in test_metrics.items()
-            }
+            # 转换numpy数组为列表以支持JSON序列化
+            serializable_metrics = {}
+            for k, v in test_metrics.items():
+                if isinstance(v, np.ndarray):
+                    serializable_metrics[k] = v.tolist()
+                else:
+                    serializable_metrics[k] = v
             json.dump(serializable_metrics, f, indent=2)
+
         print(f"测试指标已保存到: {config['paths']['test_metrics']}")
-
-
 
 
 if __name__ == "__main__":
