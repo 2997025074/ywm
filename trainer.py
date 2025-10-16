@@ -166,50 +166,52 @@ class BrainNetworkTrainer:
 
 def train_complete_model(config):
     """完整训练流程"""
-
     # 设置设备
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"使用设备: {device}")
 
-    # 创建数据加载器
+    # 创建数据加载器（修改：从config获取所有参数，适配新dataloader）
     from utils.dataloader import create_data_loaders
-    train_loader, val_loader, class_weights = create_data_loaders(
-        config['h5_path'],
-        config['label_path'],
-        batch_size=config['batch_size'],
-        train_ratio=config.get('train_ratio', 0.8)
+    train_loader, val_loader, test_loader, class_weights = create_data_loaders(
+        config=config,  # 直接传递完整config
+        shuffle=True,
+        num_workers=config.get('num_workers', 0)  # 支持从config配置线程数
     )
 
-    # 创建模型
+    # 创建模型（保持不变）
     from model.classifier import BrainNetworkClassifier
     model = BrainNetworkClassifier(
-        num_rois=config['num_rois'],
-        num_scales=config['num_scales'],
-        num_bands=config['num_bands'],
-        feat_dim=config['feat_dim'],
-        hidden_dim=config['hidden_dim'],
-        num_classes=config['num_classes']
+        num_rois=config['model']['num_rois'],
+        num_scales=config['model']['num_scales'],
+        num_bands=config['model']['num_bands'],
+        feat_dim=config['model']['feat_dim'],
+        hidden_dim=config['model']['hidden_dim'],
+        num_classes=config['model']['num_classes']
     )
     model.enable_attention_saving(True)
 
-    # 创建训练器
+    # 创建训练器（修改：从config['training']获取参数）
+    from trainer import BrainNetworkTrainer  # 补充导入
     trainer = BrainNetworkTrainer(
         model, device,
-        learning_rate=config['learning_rate'],
-        weight_decay=config.get('weight_decay', 1e-4)
+        learning_rate=config['training']['learning_rate'],
+        weight_decay=config['training'].get('weight_decay', 1e-4)
     )
     trainer.setup_training(class_weights)
 
-    # 确保result相关目录存在
-    os.makedirs(os.path.dirname(config['best_model_path']), exist_ok=True)
-    os.makedirs(config.get('checkpoint_dir', 'result/checkpoints'), exist_ok=True)
+    # 确保result相关目录存在（修改：从config['paths']获取路径）
+    os.makedirs(os.path.dirname(config['paths']['best_model']), exist_ok=True)
+    os.makedirs(config['paths']['checkpoint_dir'], exist_ok=True)
 
-    # 训练循环
+    # 训练循环（修改：使用config['training']中的参数）
     best_val_auc = 0
-    for epoch in range(config['num_epochs']):
-        print(f"\n--- Epoch {epoch + 1}/{config['num_epochs']} ---")
+    num_epochs = config['training']['num_epochs']
+    save_interval = config['training']['save_interval']
 
-        # 训练
+    for epoch in range(num_epochs):
+        print(f"\n--- Epoch {epoch + 1}/{num_epochs} ---")
+
+        # 训练（补充test_loader，后续可用于中间测试）
         train_loss, train_metrics, loss_components = trainer.train_epoch(
             train_loader, epoch
         )
@@ -222,29 +224,29 @@ def train_complete_model(config):
         print(f"验证损失: {val_loss:.4f}, 准确率: {val_metrics['accuracy']:.4f}, AUC: {val_metrics.get('auc', 0):.4f}")
         print(f"损失组件: {loss_components}")
 
-        # 保存最佳模型
+        # 保存最佳模型（修改：路径从config获取）
         current_auc = val_metrics.get('auc', 0)
         if current_auc > best_val_auc:
             best_val_auc = current_auc
-            trainer.save_checkpoint(epoch, config.get('best_model_path', 'result/best_model.pth'))
+            trainer.save_checkpoint(epoch, config['paths']['best_model'])
 
         # 定期保存检查点
-        if (epoch + 1) % config.get('save_interval', 10) == 0:
+        if (epoch + 1) % save_interval == 0:
             checkpoint_path = os.path.join(
-                config.get('checkpoint_dir', 'result/checkpoints'),
+                config['paths']['checkpoint_dir'],
                 f"checkpoint_epoch_{epoch + 1}.pth"
             )
             trainer.save_checkpoint(epoch, checkpoint_path)
 
-    # 保存训练历史
-    with open(config['train_history'], 'w') as f:
+    # 保存训练历史（修改：路径从config获取）
+    with open(config['paths']['train_history'], 'w') as f:
         # 转换numpy数组为列表以支持JSON序列化
         serializable_history = {
             k: [v.item() if isinstance(v, np.ndarray) else v for v in vals]
             for k, vals in trainer.train_history.items()
         }
         json.dump(serializable_history, f, indent=2)
-    print(f"训练历史已保存到: {config['train_history']}")
+    print(f"训练历史已保存到: {config['paths']['train_history']}")
 
     print(f"\n训练完成! 最佳验证AUC: {best_val_auc:.4f}")
     return trainer
