@@ -7,47 +7,85 @@ from torch.utils.data import DataLoader, random_split, Dataset
 
 
 class WaveletDataset(Dataset):
-    """替代ABIDEWaveletDataset的自定义数据集类
-    功能：加载h5格式的小波特征和对应的标签
-    """
+    """替代ABIDEWaveletDataset的自定义数据集类"""
+
     def __init__(self, h5_path, label_path):
         # 加载特征数据（h5文件）
         self.h5_data = h5py.File(h5_path, 'r')
-        self.sample_ids = list(self.h5_data.keys())  # 样本ID列表（与标签文件对应）
+        self.sample_ids = list(self.h5_data.keys())
 
         # 加载标签数据（csv文件）
         label_df = pd.read_csv(label_path)
-        # 假设标签文件包含'SUB_ID'（样本ID）和'DX_GROUP'（标签：1/0）
-        self.label_dict = {
-            f"{int(row['subject_id']):07d}": row['label'] - 1  # 统一ID格式为7位，标签转为0/1
-            for _, row in label_df.iterrows()
-            if not pd.isna(row['label'])
-        }
+        self.label_dict = {}
+        for _, row in label_df.iterrows():
+            try:
+                sub_id = f"{int(row['subject_id']):07d}"
+                label = int(row['label'])
+                self.label_dict[sub_id] = label
+            except (ValueError, KeyError):
+                continue
 
-        # 过滤无效样本（无标签或特征的样本）
-        self.valid_ids = [
-            sid for sid in self.sample_ids
-            if sid in self.label_dict and self.h5_data[sid].shape[0] > 0
-        ]
+        # 过滤无效样本
+        self.valid_ids = []
+        for sid in self.sample_ids:
+            if sid in self.label_dict:
+                try:
+                    if 'features' in self.h5_data[sid]:
+                        features_data = self.h5_data[sid]['features']
+                        if features_data.shape[0] > 0:
+                            # 检查特征是否包含NaN或Inf
+                            features_np = features_data[()]
+                            if (not np.any(np.isnan(features_np)) and
+                                    not np.any(np.isinf(features_np)) and
+                                    np.all(np.isfinite(features_np))):
+                                self.valid_ids.append(sid)
+                            else:
+                                print(f"警告: 样本 {sid} 包含NaN或Inf值，已跳过")
+                except (KeyError, AttributeError):
+                    continue
+
         print(f"加载数据集：有效样本数 {len(self.valid_ids)}/{len(self.sample_ids)}")
+
+        # 检查数据统计信息
+        self._check_data_statistics()
+
+    def _check_data_statistics(self):
+        """检查数据统计信息"""
+        if len(self.valid_ids) == 0:
+            return
+
+        # 随机检查几个样本
+        sample_checks = min(5, len(self.valid_ids))
+        print("数据统计检查:")
+        for i in range(sample_checks):
+            sid = self.valid_ids[i]
+            features = self.h5_data[sid]['features'][()]
+            print(f"样本 {sid}: 形状={features.shape}, "
+                  f"范围=[{features.min():.3f}, {features.max():.3f}], "
+                  f"均值={features.mean():.3f}, 标准差={features.std():.3f}, "
+                  f"NaN={np.isnan(features).any()}, Inf={np.isinf(features).any()}")
 
     def __len__(self):
         return len(self.valid_ids)
 
     def __getitem__(self, idx):
         sid = self.valid_ids[idx]
-        # 读取特征（假设h5中每个样本存储为[num_rois, num_scales, feat_dim]）
-        features = self.h5_data[sid][()]
-        # 读取标签（转为0/1）
+        features = self.h5_data[sid]['features'][()]
         label = self.label_dict[sid]
+
+        # 最终检查
+        if np.any(np.isnan(features)) or np.any(np.isinf(features)):
+            print(f"错误: 样本 {sid} 在加载时包含NaN或Inf")
+            # 用零替换有问题的值
+            features = np.nan_to_num(features)
+
         return torch.FloatTensor(features), torch.LongTensor([label])[0]
 
     def get_class_weights(self):
-        """计算类别权重（用于不平衡数据集）"""
+        """计算类别权重"""
         labels = [self.label_dict[sid] for sid in self.valid_ids]
         class_counts = np.bincount(labels)
         total = len(labels)
-        # 权重公式：total / (num_classes * class_counts)
         weights = total / (len(class_counts) * class_counts)
         return torch.FloatTensor(weights)
 
@@ -56,7 +94,7 @@ def create_data_loaders(config, shuffle=True, num_workers=0):
     """创建训练、验证和测试数据加载器（从config读取比例）
 
     Args:
-        config: 配置字典（包含数据路径和比例）
+        config: 完整的配置字典（包含data、training等键）
         shuffle: 是否打乱训练集
         num_workers: 数据加载线程数
     Returns:

@@ -15,7 +15,7 @@ class HybridGNNTransformer(nn.Module):
     """
 
     def __init__(self,
-                 in_feat_dim=72,  # 输入特征维度（72维）
+                 in_feat_dim=28,  # 输入特征维度
                  hidden_dim=64,  # 隐藏层维度
                  num_rois=116,  # 脑区数（AAL=116）
                  num_bands=4,  # 频带数（K=4）

@@ -1,15 +1,15 @@
 import torch
 import torch.nn as nn
-from model.adaptive_band_module import LearnableFrequencyBands
-from model.multiband_graph import MultiBandGraphBuilder
-from model.hybrid_gnn_transformer import HybridGNNTransformer
+from .adaptive_band_module import LearnableFrequencyBands  # 使用相对导入
+from .multiband_graph import MultiBandGraphBuilder  # 使用相对导入
+from .hybrid_gnn_transformer import HybridGNNTransformer  # 使用相对导入
 
 
 class BrainNetworkClassifier(nn.Module):
     """完整的端到端脑网络分类模型"""
 
     def __init__(self, num_rois=116, num_scales=64, num_bands=4,
-                 feat_dim=72, hidden_dim=64, num_classes=2):
+                 feat_dim=28, hidden_dim=64, num_classes=2):
         super().__init__()
 
         self.num_rois = num_rois
@@ -17,6 +17,7 @@ class BrainNetworkClassifier(nn.Module):
         self.num_bands = num_bands
         self.feat_dim = feat_dim
         self.hidden_dim = hidden_dim
+        self.num_classes = num_classes  # 添加这行
 
         # 1. 自适应频带划分模块
         self.adaptive_bands = LearnableFrequencyBands(
@@ -125,3 +126,4 @@ if __name__ == "__main__":
     print(f"预测形状: {predictions.shape} → 预期 [{B}, {num_classes}]")
     print(f"最终嵌入形状: {model_outputs['final_embeddings'].shape} → 预期 [{B}, {N}, {hidden_dim}]")
     print(f"注意力权重数量: {len(model_outputs['intra_gat_attn'])}")
+    print(f"模型类别数: {model.num_classes}")  # 测试新属性

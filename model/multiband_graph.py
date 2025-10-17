@@ -4,8 +4,9 @@ import torch.nn.functional as F
 
 
 class MultiBandGraphBuilder(nn.Module):
-    """多频带脑图构建模块（优化版）"""
-    def __init__(self, num_rois=116, num_bands=4, feature_dim=72,
+    """多频带脑图构建模块（修复版）"""
+
+    def __init__(self, num_rois=116, num_bands=4, feature_dim=28,
                  intra_threshold=0.1, inter_threshold=0.2, top_k=10):
         super().__init__()
         self.num_rois = num_rois
@@ -34,9 +35,14 @@ class MultiBandGraphBuilder(nn.Module):
             nn.Sigmoid()
         )
 
-        input_dim = feature_dim * 2 + 6
+        # 修复：正确计算输入维度 = feature_dim*2 + 2
+        input_dim = feature_dim * 2 + 2  # mean_feat + std_feat + intra_density + inter_density
+
         self.feat_compressor = nn.Sequential(
             nn.Linear(input_dim, 128),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(128, 64),
             nn.ReLU(),
             nn.Dropout(0.1)
         )
@@ -120,9 +126,9 @@ class MultiBandGraphBuilder(nn.Module):
         return refined_corr.reshape(B, N, K, K)
 
     def _build_unified_graph(self, intra_adj, inter_adj):
-        """修复循环未闭合问题，完整构建统一邻接矩阵"""
+        """构建统一邻接矩阵"""
         B, K, N, _ = intra_adj.shape
-        unified_adj = torch.zeros(B, N*K, N*K, device=intra_adj.device)
+        unified_adj = torch.zeros(B, N * K, N * K, device=intra_adj.device)
 
         # 1. 填充频带内连接（对角线块）
         for k in range(K):
@@ -134,31 +140,39 @@ class MultiBandGraphBuilder(nn.Module):
         for n in range(N):
             for k1 in range(K):
                 for k2 in range(K):
-                    if k1 != k2:  # 跳过对角块（已由频带内连接填充）
-                        # 计算节点索引：(脑区n, 频带k1) → 全局索引
+                    if k1 != k2:
                         idx1 = k1 * N + n
                         idx2 = k2 * N + n
-                        # 填充频带间连接权重（取inter_adj中对应脑区n的频带k1-k2连接）
                         unified_adj[:, idx1, idx2] = inter_adj[:, n, k1, k2]
-                        unified_adj[:, idx2, idx1] = inter_adj[:, n, k1, k2]  # 保证对称
+                        unified_adj[:, idx2, idx1] = inter_adj[:, n, k1, k2]
 
         return unified_adj
 
     def _prepare_node_features(self, band_features):
         """将频带特征转换为统一节点特征 [B, N*K, F]"""
         B, N, K, F = band_features.shape
-        return band_features.permute(0, 2, 1, 3).reshape(B, K*N, F)
+        return band_features.permute(0, 2, 1, 3).reshape(B, K * N, F)
 
     def _compute_graph_level_features(self, band_features, intra_adj, inter_adj):
-        """计算图级统计特征（简化实现）"""
+        """计算图级统计特征（修复维度问题）"""
         B, N, K, F = band_features.shape
+
+        # 计算特征统计
         mean_feat = band_features.mean(dim=(1, 2))  # [B, F]
-        std_feat = band_features.std(dim=(1, 2))   # [B, F]
+        std_feat = band_features.std(dim=(1, 2))  # [B, F]
+
+        # 计算图密度
         intra_density = intra_adj.mean(dim=(1, 2, 3))  # [B]
         inter_density = inter_adj.mean(dim=(1, 2, 3))  # [B]
-        graph_feats = torch.cat([mean_feat, std_feat,
-                                intra_density.unsqueeze(1),
-                                inter_density.unsqueeze(1)], dim=1)
+
+        # 拼接所有特征
+        graph_feats = torch.cat([
+            mean_feat,  # [B, F]
+            std_feat,  # [B, F]
+            intra_density.unsqueeze(1),  # [B, 1]
+            inter_density.unsqueeze(1)  # [B, 1]
+        ], dim=1)  # [B, F*2 + 2]
+
         return self.feat_compressor(graph_feats)
 
     def _compute_graph_sparsity(self, intra_adj, inter_adj):

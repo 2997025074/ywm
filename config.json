@@ -1,22 +1,22 @@
 {
   "data": {
-    "h5_path": "C:/Users/29970/Desktop/BrainNetworkTransformer-main/data/useful_wavelet_features.h5",
-    "label_path": "C:/Users/29970/Desktop/BrainNetworkTransformer-main/data/labels.csv"
+    "h5_path": "C:/Users/29970/Desktop/Brainwavegnn/data/useful_wavelet_features.h5",
+    "label_path": "C:/Users/29970/Desktop/Brainwavegnn/data/labels.csv"
   },
   "model": {
     "num_rois": 116,
     "num_scales": 64,
     "num_bands": 4,
-    "feat_dim": 72,
+    "feat_dim": 28,
     "hidden_dim": 64,
     "num_classes": 2
   },
   "training": {
     "batch_size": 8,
     "num_epochs": 100,
-    "learning_rate": 1e-4,
+    "learning_rate": 1e-3,
     "weight_decay": 1e-4,
-    "train_ratio": 0.8,
+    "train_ratio": 0.7,
     "val_ratio": 0.15,
     "test_ratio": 0.15,
     "save_interval": 10
